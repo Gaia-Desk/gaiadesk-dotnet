@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;netstandard2.1</TargetFrameworks>
+    <RootNamespace>GaiaDesk</RootNamespace>
+    <AssemblyName>GaiaDesk</AssemblyName>
+    <PackageId>GaiaDesk</PackageId>
+    <Version>0.1.0</Version>
+    <Description>The official .NET SDK for the GaiaDesk Platform API: list, wake and audit desks, run commands (buffered or streamed), copy files, run background jobs, read stats, mint scoped agent tokens, create support sessions and manage webhooks; desk operations end-to-end encrypted to the desk (X25519, HKDF-SHA256, XChaCha20-Poly1305). Hosted API, the desk's own local API, and a desk's pinned-TLS LAN gateway.</Description>
+    <PackageTags>gaiadesk;remote-desktop;remote-exec;api;sdk;e2e;automation</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/Gaia-Desk/gaiadesk-dotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Gaia-Desk/gaiadesk-dotnet</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReleaseNotes>See CHANGELOG.md.</PackageReleaseNotes>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <IsAotCompatible Condition="'$(TargetFramework)' == 'net8.0'">false</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.1" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <PackageReference Include="System.Threading.Channels" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../LICENSE" Pack="true" PackagePath="/" />
+    <None Include="../../CHANGELOG.md" Pack="true" PackagePath="/" />
+    <InternalsVisibleTo Include="GaiaDesk.Tests" />
+  </ItemGroup>
+
+</Project>
