@@ -1,6 +1,32 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.1 (unreleased)
+
+- Retries follow the one rule every GaiaDesk SDK now shares (README "Retries"):
+  - **Now retried that was not:** a connection that was never made (DNS, refused, a TLS handshake that
+    broke off; a desk's socket or pipe not there) for **every** method — before, only GETs; a 502 for
+    GETs whatever its kind (before, only a 502 `connection_lost`, so a proxy's Bad Gateway was final);
+    a 503's `Retry-After` is honoured like a 429's.
+  - **No longer re-sent:** a bodiless DELETE (`KillJobAsync`, `RevokeTokenAsync`, `DeleteWebhookAsync`)
+    whose connection closed before any answer — .NET's `SocketsHttpHandler` used to send it again by
+    itself, up to 3 times; every non-GET now carries a (possibly empty) body, which turns that off. A
+    connect that timed out is kind `timeout` and not retried. A 429 or 409 `idempotency_key_in_flight`
+    on an end-to-end encrypted operation is sealed afresh for each attempt (before, the same sealed
+    request was sent again).
+  - Delays: `BaseDelay` 250 ms (was 0.5 s); `MaxDelay` is now only the backoff cap, 8 s (was 30 s, and
+    also the `Retry-After` cap); new `MaxRetryWait` (60 s) caps `Retry-After` — a longer one is not
+    waited for, the error carries it. Jitter 0.5–1.0, 3 attempts in all by default (unchanged).
+    Negative delays are a `UsageException`.
+  - Proven on the raw-socket server: connection refused then the server appears (a POST runs once),
+    closed/reset before any answer, 502/503/504, permanent 503s, 429 and 409 per method, and a reused
+    keep-alive connection closed on the next request (each POST, PUT and DELETE reaches the server once).
+- Timeouts (`TimeoutOptions`): `ResponseTimeout` (16 min) bounds the wait for an answer to begin,
+  `IdleTimeout` (90 s) every read of its body, so a peer that drops or stalls a connection is a typed
+  error (`UnreachableException` / `ConnectionLostException`, kind `timeout`), never a hang. Proven on a
+  raw-socket server: closed or reset before any response byte (reads retried, bodies sent once),
+  stalled mid-body, mid-JSON, mid-stream, and silent.
+
+## 0.1.0
 
 The first release of the GaiaDesk SDK for .NET (NuGet `GaiaDesk`, net8.0 and netstandard2.1), at
 parity with the TypeScript SDK's API transport, plus the hosted API's fleet routes.
@@ -31,13 +57,7 @@ parity with the TypeScript SDK's API transport, plus the hosted API's fleet rout
 - Typed errors from the API's one envelope (`UsageException`, `RefusedException`,
   `UnreachableException`, `ConnectionLostException`, `OperationFailedException`, `ProtocolException`,
   `CommandException`) with kind, reason, desk, HTTP status, request id, `Retry-After` and exit code.
-- Retries (`RetryOptions`): 429s for every operation after `Retry-After`; lost connections and
-  502/503/504 for reads only. `Idempotency-Key` per call. `CancellationToken` everywhere.
-- Timeouts (`TimeoutOptions`): `ResponseTimeout` (16 min) bounds the wait for an answer to begin,
-  `IdleTimeout` (90 s) every read of its body, so a peer that drops or stalls a connection is a typed
-  error (`UnreachableException` / `ConnectionLostException`, kind `timeout`), never a hang. Proven on a
-  raw-socket server: closed or reset before any response byte (reads retried, bodies sent once),
-  stalled mid-body, mid-JSON, mid-stream, and silent.
+- Retries (`RetryOptions`). `Idempotency-Key` per call. `CancellationToken` everywhere.
 - `HttpClient` injection (never disposed by the SDK), `UserAgent`.
 - Dependencies: BouncyCastle.Cryptography 2.6.1 (MIT); on netstandard2.1 also System.Text.Json 8.0.5
   and System.Threading.Channels 8.0.0 (MIT).

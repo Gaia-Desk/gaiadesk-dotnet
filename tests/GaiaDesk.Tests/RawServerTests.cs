@@ -40,8 +40,9 @@ public sealed class RawServerTests
         Assert.Equal((ErrorKinds.Network, "network"), (e.Kind, e.Reason!));
         Assert.Equal("GET /desks/123456789/files", e.Operation);
         // The first try and the SDK's two retries: a GET is safe to send again. (.NET's HTTP stack may also
-        // re-send a request WITHOUT a body when the connection it used was closed before any answer — up to
-        // a few times per attempt here; it never re-sends one with a body, which the next test pins.)
+        // re-send a GET — a request without content — when the connection it used was closed before any
+        // answer, up to 3 times per attempt; every other request carries content, so it never re-sends
+        // those: the next test and RetryTests pin it.)
         Assert.InRange(s.Count("GET"), 3, 12);
         var before = s.Count("GET");
         await Fails<UnreachableException>(() => gd.StatsAsync(D));

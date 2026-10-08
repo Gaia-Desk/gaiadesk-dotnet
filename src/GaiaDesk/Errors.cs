@@ -155,6 +155,8 @@ public class GaiaDeskException : Exception
     public string? Operation { get; internal set; }
     /// <summary>The answer's JSON (the error envelope), when there was one.</summary>
     public JsonElement? Json { get; internal set; }
+    /// <summary>The connection was never made (nothing of the request was sent): safe to send again, whatever the method.</summary>
+    internal bool NeverConnected { get; set; }
 }
 
 /// <summary>The details an error is built from.</summary>

@@ -39,7 +39,7 @@ public sealed class ApiTests : IAsyncLifetime
         var r = Last("/stats");
         Assert.Equal("Bearer ak_test", r.Header("authorization"));
         Assert.Equal("gdagt_test", r.Header("x-gaiadesk-desk-token"));
-        Assert.StartsWith("gaiadesk-dotnet/", r.Header("user-agent"));
+        Assert.Equal("gaiadesk-dotnet/0.1.1", r.Header("user-agent"));
         await gd.StatsAsync(D, new CallOptions { DeskToken = "gdagt_other", Wake = 30 });
         r = Last("/stats");
         Assert.Equal("gdagt_other", r.Header("x-gaiadesk-desk-token"));

@@ -412,13 +412,26 @@ timeout is an `UnreachableException` with kind `timeout`.
 
 ## Retries, idempotency, cancellation
 
-`RetryOptions` (default `MaxRetries = 2`, `BaseDelay = 0.5 s` doubling with jitter, `MaxDelay = 30 s`):
+**Retries.** A request is sent again only when that cannot run anything twice:
+- **The connection was never made** (DNS, refused, TLS handshake): any method — nothing was sent.
+- **The connection was lost after sending, or the answer was 502, 503 or 504**: GETs only (reads).
+  A 503 that says the API or desk operations are switched off is not retried.
+- **429** (`rate_limited`, `desk_busy`) and **409** `idempotency_key_in_flight`: any method — the server refused
+  it before acting.
 
-- A **429** (`rate_limited`, `desk_busy`: nothing ran) is retried for every operation, after
-  `Retry-After` (a `Retry-After` longer than `MaxDelay` is not waited for: the error carries it).
-- A lost connection or a **502/503/504** is retried only for operations that only read (GETs),
-  freshly sealed. Operations that change something are never sent twice after they may have run.
-- `RetryOptions.None` turns retries off.
+Timeouts are never retried, and nothing is retried once its answer has begun. A call that changes something
+(POST, PUT, DELETE) is never sent again after it may have reached the server; an `Idempotency-Key` is sent but
+does not make a call retryable. 429 and 503 wait for `Retry-After`; one longer than `RetryOptions.MaxRetryWait`
+(default 60 s) is not waited for — the error carries it. Otherwise the wait is exponential backoff with jitter:
+`RetryOptions.BaseDelay` (default 250 ms) doubling up to `RetryOptions.MaxDelay` (default 8 s), times a random 0.5–1.0.
+`RetryOptions.MaxRetries` (default 2, so 3 attempts in all) sets how many times; 0 (or `RetryOptions.None`) turns
+retries off. Each retry of a sealed operation is sealed afresh.
+
+.NET's HTTP stack itself re-sends only GETs: `SocketsHttpHandler` re-sends a request that has no content when
+its connection closes before any answer, so the SDK gives every other request a body (empty if need be) and a
+POST, PUT or DELETE is never re-sent by the stack. (A connect failure is told apart by `HttpRequestError` on
+.NET 8 and later; on older runtimes running the netstandard2.1 build, a TLS handshake that breaks off is not
+retried.)
 
 **Timeouts** (`TimeoutOptions`, `Timeouts` on every options class) make a server or proxy that stops
 answering an error, never a hang:
@@ -429,9 +442,8 @@ answering an error, never a hang:
   silence while reading a body (JSON, a download, an event stream). Exceeded mid-answer:
   `ConnectionLostException`, kind `timeout` (a stream ends with that error in `StreamExit.Error`).
 - A connection closed or reset before any answer is an `UnreachableException` (kind `network`) at
-  once. .NET's HTTP stack itself may re-send a request **without a body** (a GET or DELETE) when the
-  pooled connection it used was closed before any answer; it never re-sends one with a body, so
-  `ExecAsync`, uploads, jobs, tokens and wakes go at most once unless the SDK's own policy allows.
+  once. .NET's HTTP stack itself may re-send a GET when the connection it used was closed before
+  any answer; it never re-sends a POST, PUT or DELETE (see Retries).
 
 POSTs take `CallOptions.IdempotencyKey` (`Idempotency-Key`): a retry of yours with the same key and
 the same request within 24 hours gets the first answer again. Streamed calls are never replayed.

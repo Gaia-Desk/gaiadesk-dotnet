@@ -58,19 +58,30 @@ public enum JobPriority
 public sealed class RetryOptions
 {
     /// <summary>
-    /// The most times one request is sent again (default 2; 0 turns retries off). A 429
-    /// (<c>rate_limited</c>, <c>desk_busy</c>: nothing ran) is retried for every operation, after
-    /// <c>Retry-After</c>; a lost connection or a 502/503/504 only for operations that only read
-    /// (GETs). Operations that change something are never sent twice after they may have run.
+    /// The most times one request is sent again (default 2, so 3 attempts in all; 0 turns retries off).
+    /// A request is sent again only when that cannot run anything twice: a connection that was never
+    /// made (DNS, refused, TLS handshake), for every operation; a connection lost after sending, or a
+    /// 502/503/504, for GETs only (a 503 saying the API or desk operations are switched off is final);
+    /// a 429 (<c>rate_limited</c>, <c>desk_busy</c>) or a 409 <c>idempotency_key_in_flight</c>, for every
+    /// operation. Timeouts are never retried, nor anything whose answer had begun.
     /// </summary>
     public int MaxRetries { get; set; } = 2;
-    /// <summary>The first back-off when the answer gave no <c>Retry-After</c> (doubled each time, with jitter). Default 0.5 s.</summary>
-    public TimeSpan BaseDelay { get; set; } = TimeSpan.FromMilliseconds(500);
-    /// <summary>The longest the SDK waits before one retry, <c>Retry-After</c> included (default 30 s); a longer <c>Retry-After</c> is not waited for.</summary>
-    public TimeSpan MaxDelay { get; set; } = TimeSpan.FromSeconds(30);
+    /// <summary>The first back-off when the answer gave no <c>Retry-After</c> (doubled each time, times a random 0.5–1.0). Default 250 ms.</summary>
+    public TimeSpan BaseDelay { get; set; } = TimeSpan.FromMilliseconds(250);
+    /// <summary>The longest back-off between two attempts (default 8 s). <c>Retry-After</c> is capped by <see cref="MaxRetryWait"/> instead.</summary>
+    public TimeSpan MaxDelay { get; set; } = TimeSpan.FromSeconds(8);
+    /// <summary>The longest <c>Retry-After</c> (of a 429 or 503) the SDK waits for (default 60 s); a longer one is not waited for: the error is thrown at once, carrying it.</summary>
+    public TimeSpan MaxRetryWait { get; set; } = TimeSpan.FromSeconds(60);
 
     /// <summary>No retries.</summary>
     public static RetryOptions None => new() { MaxRetries = 0 };
+
+    internal void Validate()
+    {
+        if (MaxRetries < 0) throw Errors.Usage("Retry.MaxRetries must be zero or more");
+        foreach (var (t, name) in new[] { (BaseDelay, "BaseDelay"), (MaxDelay, "MaxDelay"), (MaxRetryWait, "MaxRetryWait") })
+            if (t < TimeSpan.Zero) throw Errors.Usage($"Retry.{name} must be zero or more");
+    }
 }
 
 /// <summary>

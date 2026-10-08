@@ -77,7 +77,6 @@ internal sealed class HttpCore : IDisposable
 {
     private static readonly string SdkAgent = $"gaiadesk-dotnet/{typeof(HttpCore).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0] ?? "0"}";
     private static readonly string[] SealedQuery = { "path", "tail", "timeout" };
-    private static readonly HashSet<string> PermanentUnavailable = new(StringComparer.Ordinal) { "api_disabled", "desk_ops_disabled", "local_api_off" };
 
     private readonly HttpClient _http;
     private readonly bool _ownsHttp;
@@ -85,7 +84,6 @@ internal sealed class HttpCore : IDisposable
     private readonly RetryOptions _retry;
     private readonly string _userAgent;
     private readonly Func<HttpRequestMessage, HttpRequestException, GaiaDeskException?>? _connectError;
-    private readonly Random _jitter = new();
 
     public HttpCore(TransportKind transport, string baseUrl, string where, HttpClient http, bool ownsHttp, Credentials credentials,
         RetryOptions? retry, string? userAgent, TimeoutOptions? timeouts, Func<HttpRequestMessage, HttpRequestException, GaiaDeskException?>? connectError = null)
@@ -97,7 +95,7 @@ internal sealed class HttpCore : IDisposable
         _ownsHttp = ownsHttp;
         _credentials = credentials;
         _retry = retry ?? new RetryOptions();
-        if (_retry.MaxRetries < 0) throw Errors.Usage("Retry.MaxRetries must be zero or more");
+        _retry.Validate();
         _userAgent = string.IsNullOrWhiteSpace(userAgent) ? SdkAgent : $"{userAgent!.Trim()} {SdkAgent}";
         _connectError = connectError;
         _timeouts = timeouts ?? new TimeoutOptions();
@@ -116,8 +114,8 @@ internal sealed class HttpCore : IDisposable
 
     /// <summary>
     /// One request; an HTTP failure is the typed error from its envelope. A desk operation on the hosted
-    /// API is sealed end to end when the desk can open it. A GET that failed in passing (no connection,
-    /// 502/503/504) is sent again, freshly sealed.
+    /// API is sealed end to end when the desk can open it. A failed attempt is sent again only where
+    /// <see cref="RetryPolicy.Retryable"/> allows, sealed afresh each time.
     /// </summary>
     public async Task<ApiResponse> SendAsync(ApiRequest r, CancellationToken ct)
     {
@@ -128,70 +126,45 @@ internal sealed class HttpCore : IDisposable
                 if (E2e is null || r.E2e is not { } e) return await SendPrepared(r, null, ct).ConfigureAwait(false);
                 return await E2e.Call(e.Desk, e.Op, e.Request, r.DeskToken, r.Wake, s => SendPrepared(r, s, ct), ct).ConfigureAwait(false);
             }
-            catch (GaiaDeskException ex) when (r.Method == "GET" && attempt < _retry.MaxRetries && Transient(ex) && DelayFor(ex, attempt) is { } d)
+            catch (GaiaDeskException ex) when (attempt < _retry.MaxRetries && RetryPolicy.Retryable(ex, r.Method) && RetryPolicy.Delay(_retry, ex, attempt, RetryPolicy.Jitter()) is { } d)
             {
                 await Task.Delay(d, ct).ConfigureAwait(false);
             }
         }
     }
 
-    private static bool Transient(GaiaDeskException e) =>
-        (e is UnreachableException && e.Status is null && e.Reason == "network")
-        || e.Status == 504
-        || (e.Status == 502 && e is ConnectionLostException)
-        || (e.Status == 503 && (e.Reason is null || !PermanentUnavailable.Contains(e.Reason)));
-
-    private static bool NothingRan(GaiaDeskException e) =>
-        e.Status == 429 || e.Reason is Reasons.RateLimited or Reasons.DeskBusy or Reasons.IdempotencyKeyInFlight;
-
-    private TimeSpan? DelayFor(GaiaDeskException e, int attempt)
-    {
-        if (e.RetryAfter is { } ra) return ra <= _retry.MaxDelay ? (ra < TimeSpan.Zero ? TimeSpan.Zero : ra) : null;
-        double jitter;
-        lock (_jitter) jitter = 0.5 + _jitter.NextDouble() * 0.5;
-        var ms = _retry.BaseDelay.TotalMilliseconds * Math.Pow(2, attempt) * jitter;
-        return TimeSpan.FromMilliseconds(Math.Min(ms, _retry.MaxDelay.TotalMilliseconds));
-    }
-
-    /// <summary>Send one prepared request (sealed or not), again as it was after a 429 (nothing ran).</summary>
+    /// <summary>Send one prepared request (sealed or not) once.</summary>
     private async Task<ApiResponse> SendPrepared(ApiRequest r, Sealed? s, CancellationToken ct)
     {
-        for (var attempt = 0; ; attempt++)
+        using var msg = await Build(r, s, ct).ConfigureAwait(false);
+        HttpResponseMessage res;
+        // The answer must begin within ResponseTimeout (sending the request included); its body is
+        // then read under IdleTimeout (OpenBody), so a peer that goes silent is an error, never a hang.
+        using var headers = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        if (_timeouts.ResponseTimeout != Timeout.InfiniteTimeSpan) headers.CancelAfter(_timeouts.ResponseTimeout);
+        try
         {
-            using var msg = await Build(r, s, ct).ConfigureAwait(false);
-            HttpResponseMessage res;
-            // The answer must begin within ResponseTimeout (sending the request included); its body is
-            // then read under IdleTimeout (OpenBody), so a peer that goes silent is an error, never a hang.
-            using var headers = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            if (_timeouts.ResponseTimeout != Timeout.InfiniteTimeSpan) headers.CancelAfter(_timeouts.ResponseTimeout);
-            try
-            {
-                res = await _http.SendAsync(msg, HttpCompletionOption.ResponseHeadersRead, headers.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (OperationCanceledException e)
-            {
-                var which = headers.IsCancellationRequested ? $"within {_timeouts.ResponseTimeout.TotalSeconds:0.###} s (Timeouts.ResponseTimeout)" : "in time (the HttpClient's Timeout)";
-                throw new UnreachableException($"{Where} did not answer {r.Operation} {which}",
-                    new ErrorDetails { Kind = ErrorKinds.Timeout, Reason = "timeout", ExitCode = 255, Operation = r.Operation }, e);
-            }
-            catch (HttpRequestException e)
-            {
-                throw ConnectFailure(msg, e, r.Operation);
-            }
-            if (res.IsSuccessStatusCode) return new ApiResponse(res, s?.Seal);
-            GaiaDeskException err;
-            using (res) err = await ApiError(res, r.Operation, s?.Seal, ct).ConfigureAwait(false);
-            if (attempt < _retry.MaxRetries && NothingRan(err) && DelayFor(err, attempt) is { } d)
-            {
-                await Task.Delay(d, ct).ConfigureAwait(false);
-                continue;
-            }
+            res = await _http.SendAsync(msg, HttpCompletionOption.ResponseHeadersRead, headers.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException e)
+        {
+            var which = headers.IsCancellationRequested ? $"within {_timeouts.ResponseTimeout.TotalSeconds:0.###} s (Timeouts.ResponseTimeout)" : "in time (the HttpClient's Timeout)";
+            throw new UnreachableException($"{Where} did not answer {r.Operation} {which}",
+                new ErrorDetails { Kind = ErrorKinds.Timeout, Reason = "timeout", ExitCode = 255, Operation = r.Operation }, e);
+        }
+        catch (HttpRequestException e)
+        {
+            var err = ConnectFailure(msg, e, r.Operation);
+            // Nothing of the request left this machine: any method may be sent again (a pin refused is final).
+            if (err is not FingerprintMismatchException && RetryPolicy.NeverConnected(e)) err.NeverConnected = true;
             throw err;
         }
+        if (res.IsSuccessStatusCode) return new ApiResponse(res, s?.Seal);
+        using (res) throw await ApiError(res, r.Operation, s?.Seal, ct).ConfigureAwait(false);
     }
 
     private GaiaDeskException ConnectFailure(HttpRequestMessage msg, HttpRequestException e, string operation)
@@ -210,8 +183,12 @@ internal sealed class HttpCore : IDisposable
             }
         }
         var why = e.InnerException?.Message ?? e.Message;
-        return new UnreachableException($"{Where} could not be reached: {why}",
-            new ErrorDetails { Kind = ErrorKinds.Network, Reason = "network", ExitCode = 255, Operation = operation }, e);
+        var timedOut = false;
+        for (Exception? x = e; x is not null; x = x.InnerException)
+            timedOut |= x is TimeoutException || x is System.Net.Sockets.SocketException { SocketErrorCode: System.Net.Sockets.SocketError.TimedOut };
+        return new UnreachableException($"{Where} could not be reached: {why}", timedOut
+            ? new ErrorDetails { Kind = ErrorKinds.Timeout, Reason = "timeout", ExitCode = 255, Operation = operation }
+            : new ErrorDetails { Kind = ErrorKinds.Network, Reason = "network", ExitCode = 255, Operation = operation }, e);
     }
 
     private async Task<HttpRequestMessage> Build(ApiRequest r, Sealed? s, CancellationToken ct)
@@ -246,6 +223,11 @@ internal sealed class HttpCore : IDisposable
             c.Headers.ContentLength = up.Length;
             msg.Content = c;
         }
+        // SocketsHttpHandler sends a request again by itself (up to 3 times) when the connection it used
+        // closes before any answer, but only a request with no Content (HttpConnection: `request.Content is
+        // null` sets _canRetry). Every request that may change something carries Content, empty if need be,
+        // so only a GET can ever be re-sent by the stack.
+        if (msg.Content is null && r.Method is not ("GET" or "HEAD")) msg.Content = new ByteArrayContent(Array.Empty<byte>());
         return msg;
     }
 
