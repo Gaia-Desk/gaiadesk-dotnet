@@ -95,15 +95,12 @@ public static class Reasons
     /// <summary>The desk cannot open sealed operations (409 protocol).</summary>
     public const string E2eUnsupported = "e2e_unsupported";
 
-    /// <summary>Exec <c>Admin = true</c>: the token has no <c>admin</c> scope (or it is a person's call).</summary>
-    public const string AdminScopeMissing = "admin_scope_missing";
-    /// <summary>Exec <c>Admin = true</c>: Admin access is off on the desk.</summary>
-    public const string AdminNotEnabled = "admin_not_enabled";
-    /// <summary>Exec <c>Admin = true</c>: the person at the desk said no, nobody answered, or nobody was there.</summary>
-    public const string AdminDenied = "admin_denied";
-    /// <summary>Exec <c>Admin = true</c>: no privileged process on the desk, or a desk too old for the field.</summary>
-    public const string AdminUnavailable = "admin_unavailable";
-    /// <summary>Windows Smart App Control / WDAC refused the program (administrator does not get past it).</summary>
+    /// <summary>
+    /// Administrator work (exec <c>"admin": true</c>, or minting a token with the <c>admin</c> scope) asked of an
+    /// API: refused before anything runs. It is only available through <c>gaiadesk-cli exec --admin</c>.
+    /// </summary>
+    public const string AdminNotViaApi = "admin_not_via_api";
+    /// <summary>Windows Smart App Control / WDAC refused the program.</summary>
     public const string BlockedByOsPolicy = "blocked_by_os_policy";
 
     /// <summary>The local API is not being served here (no socket or pipe, or no admin token).</summary>
@@ -139,7 +136,7 @@ public class GaiaDeskException : Exception
 
     /// <summary>The finest kind known: the reason when it is one of <see cref="ErrorKinds"/>, else the error's kind.</summary>
     public string Kind { get; }
-    /// <summary>The finer cause (<c>offline</c>, <c>missing_scope</c>, <c>e2e_required</c>, <c>admin_denied</c>, …), or null.</summary>
+    /// <summary>The finer cause (<c>offline</c>, <c>missing_scope</c>, <c>e2e_required</c>, <c>admin_not_via_api</c>, …), or null.</summary>
     public string? Reason { get; }
     /// <summary>The desk the error concerned, when it was said.</summary>
     public string? Desk { get; }
@@ -197,7 +194,7 @@ public class UsageException : GaiaDeskException
     }
 }
 
-/// <summary>The API or the desk said no (exit 254): credentials, a missing scope, rate limits, a desk setting, an admin refusal.</summary>
+/// <summary>The API or the desk said no (exit 254): credentials, a missing scope, rate limits, a desk setting.</summary>
 public class RefusedException : GaiaDeskException
 {
     /// <summary>Creates the error.</summary>

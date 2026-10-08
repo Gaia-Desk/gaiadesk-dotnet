@@ -1,6 +1,18 @@
 # Changelog
 
-## 0.1.1 (unreleased)
+## 0.1.2 (unreleased)
+
+- **Breaking: administrator work is not available over any API.** The hosted API, a desk's local API
+  and its LAN gateway refuse it (exec with `"admin": true`: 200, exit 254, reason `admin_not_via_api`;
+  minting a token with the `admin` scope: 403, `admin_not_via_api`), so the SDK no longer offers it:
+  `ExecOptions.Admin` and `TokenScopes.Admin` are removed, and so are the refusal reasons
+  `Reasons.AdminScopeMissing`, `AdminNotEnabled`, `AdminDenied` and `AdminUnavailable`. New
+  `Reasons.AdminNotViaApi` (a `RefusedException`, kind `refused`). Administrator work (root / SYSTEM)
+  runs only through `gaiadesk-cli exec --admin`.
+- Tests only: the "connection refused with retries off fails at once" test allows for Windows, where
+  one refused connect takes about 2 s.
+
+## 0.1.1
 
 - Retries follow the one rule every GaiaDesk SDK now shares (README "Retries"):
   - **Now retried that was not:** a connection that was never made (DNS, refused, a TLS handshake that
@@ -44,7 +56,8 @@ parity with the TypeScript SDK's API transport, plus the hosted API's fleet rout
   and 870 s turns, `KillJobAsync`), `StatsAsync`, tokens (`CreateTokenAsync` per desk with partial
   results on failure, `ListTokensAsync`, `RevokeTokenAsync`).
 - Admin access: `ExecOptions.Admin` (`"admin": true`), the `admin` token scope, and the refusal reasons
-  `admin_scope_missing`, `admin_not_enabled`, `admin_denied`, `admin_unavailable` (`Reasons.*`).
+  `admin_scope_missing`, `admin_not_enabled`, `admin_denied`, `admin_unavailable` (`Reasons.*`)
+  (removed in 0.1.2).
 - Support sessions (`CreateSupportSessionAsync`, `ListSupportSessionsAsync`,
   `GetSupportSessionAsync`), audit (`ListAuditAsync`, `EnumerateAuditAsync` paging by time), webhooks
   (`CreateWebhookAsync`, `ListWebhooksAsync`, `DeleteWebhookAsync`) and delivery verification

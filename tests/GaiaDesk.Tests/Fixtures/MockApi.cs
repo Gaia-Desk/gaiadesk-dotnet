@@ -40,8 +40,6 @@ internal sealed class MockDesk
     public bool Wakeable { get; set; }
     /// <summary>Lookups that list no key before it shows (a stale view).</summary>
     public int HideKeyLookups { get; set; }
-    /// <summary>Exec admin: null runs it as administrator; else the refusal reason.</summary>
-    public string? AdminRefusal { get; set; } = Reasons.AdminNotEnabled;
 }
 
 internal sealed record Recorded(string Method, string Path, Dictionary<string, string> Query, Dictionary<string, string> Headers, byte[] Body)

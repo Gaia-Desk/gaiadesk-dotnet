@@ -197,12 +197,6 @@ public sealed class ExecOptions : CallOptions
     public TimeSpan? Timeout { get; set; }
     /// <summary><c>ExecAsync</c>: a non-zero exit (or a timeout) is a <see cref="CommandException"/>.</summary>
     public bool Check { get; set; }
-    /// <summary>
-    /// Run it as administrator (root on macOS/Linux, SYSTEM on Windows). Needs a desk token with the
-    /// <c>admin</c> scope and the desk owner's Admin access; a refusal is <c>exit</c> 254 with reason
-    /// <c>admin_scope_missing</c>, <c>admin_not_enabled</c>, <c>admin_denied</c> or <c>admin_unavailable</c>.
-    /// </summary>
-    public bool Admin { get; set; }
 }
 
 /// <summary>Options for <c>RunJobAsync</c>.</summary>
@@ -233,7 +227,7 @@ public sealed class TokenCreateOptions : CallOptions
     public string? Name { get; set; }
     /// <summary>How long it lives (default 7 days).</summary>
     public TimeSpan? Expires { get; set; }
-    /// <summary>What it may do (default exec, cp, jobs). <c>admin</c> is never implied: name it (<see cref="TokenScopes.Admin"/>).</summary>
+    /// <summary>What it may do (default exec, cp, jobs). The API refuses the <c>admin</c> scope (<c>admin_not_via_api</c>).</summary>
     public IReadOnlyList<string>? Scopes { get; set; }
     /// <summary>Confine its work to this folder on the desk.</summary>
     public string? Cwd { get; set; }
@@ -256,8 +250,6 @@ public static class TokenScopes
     public const string Screen = "screen";
     /// <summary>Port forwarding.</summary>
     public const string Forward = "forward";
-    /// <summary>ASK to run as administrator (exec <c>Admin = true</c>); the desk owner's Admin access still decides. Never implied.</summary>
-    public const string Admin = "admin";
 }
 
 /// <summary>Filters for <c>ListAuditAsync</c> (<c>GET /audit</c>).</summary>

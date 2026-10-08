@@ -14,6 +14,14 @@ internal sealed partial class MockApi
     private static JsonObject Out(byte[] b, string stream = "stdout") => new() { ["event"] = stream, ["data"] = Convert.ToBase64String(b) };
     private static JsonObject Out(string s) => Out(Encoding.UTF8.GetBytes(s));
     private static JsonObject Exit(JsonNode result) => new() { ["event"] = "exit", ["result"] = result };
+    /// <summary>The API's exec answer to <c>"admin": true</c>: refused, nothing ran.</summary>
+    public static JsonObject AdminNotViaApi(string desk) => Exit(new JsonObject
+    {
+        ["desk"] = desk, ["exit"] = 254, ["remote_code"] = null, ["duration_ms"] = 0, ["notes"] = new JsonArray(), ["stdout"] = "", ["stderr"] = "",
+        ["timed_out"] = false, ["truncated"] = false,
+        ["error"] = new JsonObject { ["kind"] = "refused", ["message"] = "administrator work is not available over the API: use gaiadesk-cli exec --admin", ["reason"] = "admin_not_via_api", ["desk"] = desk },
+    });
+
     private static JsonObject Err(string kind, string message, string? reason = null)
     {
         var o = new JsonObject { ["event"] = "error", ["kind"] = kind, ["message"] = message };
@@ -33,14 +41,9 @@ internal sealed partial class MockApi
                 var spec = req["spec"]?.AsObject() ?? new JsonObject();
                 var cmd = S(spec, "command") ?? string.Join(" ", spec["argv"]?.AsArray().Select(x => x!.GetValue<string>()) ?? Array.Empty<string>());
                 if (cmd == "refuse") return new() { Err("refused", $"this token (bot) has no exec scope on desk {desk}", "token_refused") };
-                var admin = spec["admin"] is JsonValue av && av.GetValue<bool>();
-                if (admin && d.AdminRefusal is { } why)
-                    return new() { Exit(new JsonObject
-                    {
-                        ["desk"] = desk, ["exit"] = 254, ["remote_code"] = null, ["duration_ms"] = 3, ["notes"] = new JsonArray(), ["stdout"] = "", ["stderr"] = "",
-                        ["timed_out"] = false, ["truncated"] = false, ["error"] = new JsonObject { ["kind"] = "refused", ["message"] = $"run as administrator refused: {why}", ["reason"] = why, ["desk"] = desk },
-                    }) };
-                var text = admin ? "root\n" : $"ran: {cmd} é\n";
+                // As the API: administrator work is refused before anything runs (exit 254, admin_not_via_api).
+                if (spec["admin"] is JsonValue av && av.GetValue<bool>()) return new() { AdminNotViaApi(desk) };
+                var text = $"ran: {cmd} é\n";
                 foreach (var kv in spec["env"]?.AsObject() ?? new JsonObject()) text += $"env: {kv.Key}={kv.Value!.GetValue<string>()}\n";
                 if (S(spec, "stdin") is { } stdin) text += $"stdin: {stdin}\n";
                 if (S(spec, "cwd") is { } cwd) text += $"cwd: {cwd}\n";
@@ -101,6 +104,8 @@ internal sealed partial class MockApi
                 return ev;
             }
             case "token_mint":
+                if (req["spec"]?["scopes"] is JsonArray sc && sc.Any(x => x?.GetValue<string>() == "admin"))
+                    return new() { Err("refused", "a token with the admin scope cannot be minted through the API: use gaiadesk-cli", "admin_not_via_api") };
                 if (desk == "888888888") return new() { Err("refused", "this desk refuses", "desk_opted_out") };
                 return new() { Exit(new JsonObject { ["tokens"] = new JsonArray(new JsonObject { ["desk"] = desk, ["secret"] = "gdagt_minted_secret", ["token"] = new JsonObject { ["id"] = "tok1", ["label"] = S(req["spec"], "name"), ["scopes"] = req["spec"]!["scopes"]!.DeepClone(), ["issued_at_ms"] = 1, ["expires_at_ms"] = 2 } }) }) };
             case "token_list":

@@ -46,14 +46,13 @@ public sealed partial class GaiaDeskClient
         if (o.Cwd is not null) spec["cwd"] = Check.Cwd(o.Cwd);
         if (o.Timeout is { } t) spec["timeout_secs"] = Check.Seconds(t, "Timeout");
         if (o.Stdin is not null) spec["stdin"] = o.Stdin;
-        if (o.Admin) spec["admin"] = true;
         return spec;
     }
 
     /// <summary>
     /// <c>POST /desks/{id}/exec</c>: run one command line (given to the desk's shell verbatim) and wait for it.
     /// A command that ran answers whatever its exit code; one that never ran (refused, unreachable, a
-    /// <c>cwd</c> that is not there, an admin refusal) is its typed error. <see cref="ExecOptions.Check"/>:
+    /// <c>cwd</c> that is not there, a refusal) is its typed error. <see cref="ExecOptions.Check"/>:
     /// a non-zero exit is a <see cref="CommandException"/>.
     /// </summary>
     public Task<ExecResult> ExecAsync(string deskId, string command, ExecOptions? options = null, CancellationToken cancellationToken = default) =>
@@ -280,8 +279,6 @@ public sealed partial class GaiaDeskClient
         if (options.Name is null || options.Name.Trim().Length == 0) throw Errors.Usage("CreateTokenAsync needs a Name over the API");
         var scopes = options.Scopes ?? new[] { TokenScopes.Exec, TokenScopes.Cp, TokenScopes.Jobs };
         if (scopes.Count == 0) throw Errors.Usage("Scopes must not be empty");
-        if (scopes.Contains(TokenScopes.Admin) && (options.Cwd is not null || options.LowPriv))
-            throw Errors.Usage("a confined token (Cwd or LowPriv) never runs as administrator: it cannot carry the admin scope");
         var spec = new JsonObject
         {
             ["name"] = options.Name,

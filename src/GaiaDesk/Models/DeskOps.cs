@@ -22,7 +22,7 @@ public sealed class ErrorInfo : GaiaDeskObject
     [JsonPropertyName("kind")] public string Kind { get; set; } = "";
     /// <summary>For a person.</summary>
     [JsonPropertyName("message")] public string Message { get; set; } = "";
-    /// <summary>The finer cause (<c>offline</c>, <c>timeout</c>, <c>admin_denied</c>, …).</summary>
+    /// <summary>The finer cause (<c>offline</c>, <c>timeout</c>, <c>admin_not_via_api</c>, …).</summary>
     [JsonPropertyName("reason")] public string? Reason { get; set; }
     /// <summary>The desk it concerned.</summary>
     [JsonPropertyName("desk")] public string? Desk { get; set; }
@@ -203,7 +203,7 @@ public sealed class TokenInfo : GaiaDeskObject
     [JsonPropertyName("id")] public string Id { get; set; } = "";
     /// <summary>Its name.</summary>
     [JsonPropertyName("label")] public string Label { get; set; } = "";
-    /// <summary>What it may do: exec, shell, cp, jobs, screen, forward, admin, …</summary>
+    /// <summary>What it may do: exec, shell, cp, jobs, screen, forward, …</summary>
     [JsonPropertyName("scopes")] public List<string>? Scopes { get; set; }
     /// <summary>When it was minted (Unix ms).</summary>
     [JsonPropertyName("issued_at_ms")] public long IssuedAtMs { get; set; }

@@ -39,7 +39,7 @@ public sealed class ApiTests : IAsyncLifetime
         var r = Last("/stats");
         Assert.Equal("Bearer ak_test", r.Header("authorization"));
         Assert.Equal("gdagt_test", r.Header("x-gaiadesk-desk-token"));
-        Assert.Equal("gaiadesk-dotnet/0.1.1", r.Header("user-agent"));
+        Assert.Equal("gaiadesk-dotnet/0.1.2", r.Header("user-agent"));
         await gd.StatsAsync(D, new CallOptions { DeskToken = "gdagt_other", Wake = 30 });
         r = Last("/stats");
         Assert.Equal("gdagt_other", r.Header("x-gaiadesk-desk-token"));
@@ -160,22 +160,21 @@ public sealed class ApiTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Exec_Admin_SendsTheField_AndRefusalsAreTyped()
+    public async Task AdminNotViaApi_MintAndExecAreRefusals()
     {
+        // Nothing in the SDK asks an API for administrator work: no exec option, no scope constant.
+        Assert.Null(typeof(ExecOptions).GetProperty("Admin"));
+        Assert.Null(typeof(TokenScopes).GetField("Admin"));
+        Assert.Equal("admin_not_via_api", Reasons.AdminNotViaApi);
+        using var owner = Gd("session-person", null);
+        var mint = await Assert.ThrowsAsync<RefusedException>(() => owner.CreateTokenAsync(new TokenCreateOptions { Desks = new[] { D }, Name = "root-bot", Scopes = new[] { "exec", "admin" } }));
+        Assert.Equal((403, ErrorKinds.Refused, Reasons.AdminNotViaApi, 254), (mint.Status!.Value, mint.Kind, mint.Reason!, mint.ExitCode!.Value));
+        // The exec answer the API gives "admin": true (200, exit 254, a refused error), as a raw-API caller would get it.
         using var gd = Gd();
-        var e = await Assert.ThrowsAsync<RefusedException>(() => gd.ExecAsync(D, "whoami", new ExecOptions { Admin = true }));
-        Assert.Equal(Reasons.AdminNotEnabled, e.Reason);
-        Assert.Equal(254, e.ExitCode);
-        Assert.Equal(D, e.Desk);
-        Assert.Equal("{\"command\":\"whoami\",\"admin\":true}", Last("/exec").BodyText);
-        foreach (var why in new[] { Reasons.AdminScopeMissing, Reasons.AdminDenied, Reasons.AdminUnavailable })
-        {
-            _api.Desks[D].AdminRefusal = why;
-            Assert.Equal(why, (await Assert.ThrowsAsync<RefusedException>(() => gd.ExecAsync(D, "whoami", new ExecOptions { Admin = true }))).Reason);
-        }
-        _api.Desks[D].AdminRefusal = null;
-        Assert.Equal("root\n", (await gd.ExecAsync(D, "whoami", new ExecOptions { Admin = true })).Stdout);
-        await gd.ExecAsync(D, "whoami");
+        _api.Inject(new Injection { Match = r => r.Path.EndsWith("/exec", StringComparison.Ordinal), Status = 200, Body = MockApi.AdminNotViaApi(D)["result"]!.ToJsonString() });
+        var exec = await Assert.ThrowsAsync<RefusedException>(() => gd.ExecAsync(D, "whoami"));
+        Assert.Equal((ErrorKinds.Refused, Reasons.AdminNotViaApi, 254, D), (exec.Kind, exec.Reason!, exec.ExitCode!.Value, exec.Desk!));
+        Assert.Contains("gaiadesk-cli", exec.Message);
         Assert.DoesNotContain("admin", Last("/exec").BodyText);
     }
 
@@ -351,9 +350,9 @@ public sealed class ApiTests : IAsyncLifetime
     public async Task Tokens_MintPerDesk_ListRevoke_PartialFailureKeepsMinted()
     {
         using var owner = Gd("session-person", null);
-        var m = await owner.CreateTokenAsync(new TokenCreateOptions { Desks = new[] { D }, Name = "bot", Expires = TimeSpan.FromHours(1), Scopes = new[] { "exec", TokenScopes.Admin } });
+        var m = await owner.CreateTokenAsync(new TokenCreateOptions { Desks = new[] { D }, Name = "bot", Expires = TimeSpan.FromHours(1), Scopes = new[] { "exec", TokenScopes.Shell } });
         Assert.Equal("gdagt_minted_secret", Assert.Single(m.Tokens).Secret);
-        Assert.Equal("{\"name\":\"bot\",\"expires_secs\":3600,\"scopes\":[\"exec\",\"admin\"]}", Last("/tokens", "POST").BodyText);
+        Assert.Equal("{\"name\":\"bot\",\"expires_secs\":3600,\"scopes\":[\"exec\",\"shell\"]}", Last("/tokens", "POST").BodyText);
         await owner.CreateTokenAsync(new TokenCreateOptions { Desks = new[] { D }, Name = "bot", Cwd = "/srv", LowPriv = true });
         Assert.Equal("{\"name\":\"bot\",\"expires_secs\":604800,\"scopes\":[\"exec\",\"cp\",\"jobs\"],\"cwd\":\"/srv\",\"low_priv\":true}", Last("/tokens", "POST").BodyText);
         var partial = await Assert.ThrowsAsync<RefusedException>(() => owner.CreateTokenAsync(new TokenCreateOptions { Desks = new[] { D, "888888888" }, Name = "bot" }));
@@ -363,7 +362,6 @@ public sealed class ApiTests : IAsyncLifetime
         Assert.Equal("tok 1", (await owner.RevokeTokenAsync(D, "tok 1")).Revoked);
         Assert.EndsWith("/tokens/tok 1", Last("/tokens/tok 1", "DELETE").Path);
         await Assert.ThrowsAsync<UsageException>(() => owner.CreateTokenAsync(new TokenCreateOptions { Desks = new[] { D } }));
-        await Assert.ThrowsAsync<UsageException>(() => owner.CreateTokenAsync(new TokenCreateOptions { Desks = new[] { D }, Name = "x", Scopes = new[] { "admin" }, Cwd = "/x" }));
         var agent = await Assert.ThrowsAsync<RefusedException>(() => Gd().ListTokensAsync(D));
         Assert.Equal(Reasons.AgentCannotAdmin, agent.Reason);
     }

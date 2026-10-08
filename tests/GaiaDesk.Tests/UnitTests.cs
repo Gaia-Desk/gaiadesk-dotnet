@@ -67,7 +67,7 @@ public class ErrorTests
     public void Kinds_ClassFollowsTheKind_KindIsTheFinestKnown()
     {
         Assert.Equal("offline", ErrorKinds.For("unreachable", "offline"));
-        Assert.Equal("refused", ErrorKinds.For("refused", "admin_denied"));
+        Assert.Equal("refused", ErrorKinds.For("refused", "admin_not_via_api"));
         Assert.IsType<UnreachableException>(Errors.ForKind("unreachable", "x", new ErrorDetails()));
         Assert.IsType<ConnectionLostException>(Errors.ForKind("connection_lost", "x", new ErrorDetails()));
         Assert.IsType<OperationFailedException>(Errors.ForKind("failed", "x", new ErrorDetails()));
@@ -75,9 +75,9 @@ public class ErrorTests
         Assert.IsType<UsageException>(Errors.ForKind("usage", "x", new ErrorDetails()));
         Assert.IsType<GaiaDeskException>(Errors.ForKind("other", "x", new ErrorDetails()));
         Assert.Equal((254, 1, 255), (Errors.DeskOpExit("refused"), Errors.DeskOpExit("failed"), Errors.DeskOpExit("protocol")));
-        var x = new StreamExit { ExitCode = 254, Error = new ErrorInfo { Kind = "refused", Message = "no", Reason = Reasons.AdminDenied } };
+        var x = new StreamExit { ExitCode = 254, Error = new ErrorInfo { Kind = "refused", Message = "no", Reason = Reasons.AdminNotViaApi } };
         Assert.False(x.Succeeded);
-        Assert.Equal(Reasons.AdminDenied, Assert.Throws<RefusedException>(x.ThrowIfError).Reason);
+        Assert.Equal(Reasons.AdminNotViaApi, Assert.Throws<RefusedException>(x.ThrowIfError).Reason);
     }
 }
 

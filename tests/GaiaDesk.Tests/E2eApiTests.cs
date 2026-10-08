@@ -111,17 +111,6 @@ public sealed class E2eApiTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Exec_Admin_Sealed_SameRefusalAndResult()
-    {
-        var e = await SameError(g => g.ExecAsync(SealedDesk, $"whoami {Canary}", new ExecOptions { Admin = true }));
-        Assert.IsType<RefusedException>(e);
-        Assert.Equal(Reasons.AdminNotEnabled, e.Reason);
-        _api.Desks[SealedDesk].AdminRefusal = null;
-        try { Assert.Equal("root\n", (await Same(g => g.ExecAsync(SealedDesk, "whoami", new ExecOptions { Admin = true }))).Stdout); }
-        finally { _api.Desks[SealedDesk].AdminRefusal = Reasons.AdminNotEnabled; }
-    }
-
-    [Fact]
     public async Task ExecStream_SealedEventsOpenIntoTheSameChunksAndExit()
     {
         var r = await Same(async g => await g.ExecStream(SealedDesk, $"echo {Canary}", new ExecOptions { Env = new Dictionary<string, string> { ["K"] = Canary } }).CollectAsync());

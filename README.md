@@ -21,7 +21,7 @@ relay only ciphertext.
 - [Desks: list, read, reach, wake](#desks-list-read-reach-wake)
 - [Running commands](#running-commands)
 - [Streaming output](#streaming-output)
-- [Running as administrator](#running-as-administrator)
+- [Administrator work](#administrator-work)
 - [Files](#files)
 - [Background jobs](#background-jobs)
 - [Stats](#stats)
@@ -138,28 +138,10 @@ stops the command (`exit.Killed`, exit code 130). A failure after the stream sta
 a refusal) ends it with `exit.Error`; `WaitAsync` never throws for the operation's own failure.
 Stdin is given up front (`ExecOptions.Stdin`); writing stdin while it runs is not part of the API.
 
-## Running as administrator
+## Administrator work
 
-```csharp
-var r = await gd.ExecAsync(desk, "whoami", new ExecOptions { Admin = true });   // root / SYSTEM
-```
-
-`Admin = true` sends `"admin": true`: the command runs as administrator (root on macOS / Linux,
-SYSTEM on Windows) in the desk's privileged GaiaDesk process. It needs **both** a desk token with the
-`admin` scope (never implied: mint it with `TokenScopes.Admin`) **and** the desk owner's Admin
-access switch, which can only be turned on at the desk. By default the person at the desk is asked
-each time. A refusal is a `RefusedException` (exit 254) with `Reason`:
-
-| `Reason` | meaning |
-|---|---|
-| `admin_scope_missing` | the token has no `admin` scope (or it is a person's call) |
-| `admin_not_enabled` | Admin access is off on the desk |
-| `admin_denied` | the person at the desk said no, nobody answered, or nobody was there |
-| `admin_unavailable` | no privileged process on the desk, or a desk too old for the field (it refuses rather than run as its user) |
-
-Windows Smart App Control / WDAC still refuse unsigned new programs (`blocked_by_os_policy`).
-Background jobs never run as administrator. A confined token (`Cwd`, `LowPriv`) cannot carry the
-`admin` scope; `CreateTokenAsync` refuses that combination up front.
+Administrator work (root / SYSTEM) is only available through `gaiadesk-cli exec --admin`, not the
+API — the API refuses it with `admin_not_via_api` (a `RefusedException`, exit 254).
 
 ## Files
 
@@ -385,7 +367,7 @@ Every failure is a `GaiaDeskException`; the class follows the API's error kind:
 | Class | Kind | HTTP | Means |
 |---|---|---|---|
 | `UsageException` | `usage` | 400 | fix the request (also raised by the SDK before sending) |
-| `RefusedException` | `refused` | 401, 403, 429 | credentials, scopes, rate limits, desk settings, admin refusals |
+| `RefusedException` | `refused` | 401, 403, 429 | credentials, scopes, rate limits, desk settings |
 | `E2eException` (a `RefusedException`) | `refused` | — | would not send in the clear / a pinned key mismatch |
 | `UnreachableException` | `unreachable`, `network`, `offline`, … | 404, 409, 503, 504 | the desk or the API could not be reached |
 | `FingerprintMismatchException` | `unreachable` | — | the LAN gateway is not the pinned desk |
@@ -395,7 +377,7 @@ Every failure is a `GaiaDeskException`; the class follows the API's error kind:
 | `CommandException` | `failed` | — | `ExecOptions.Check` and a non-zero exit (`Result` has the output) |
 
 Each carries `Kind` (the finest known: the reason when it is one of `ErrorKinds`), `Reason`
-(`Reasons.*`: `missing_scope`, `rate_limited`, `desk_opted_out`, `admin_denied`, …), `Desk`,
+(`Reasons.*`: `missing_scope`, `rate_limited`, `desk_opted_out`, `admin_not_via_api`, …), `Desk`,
 `Status` (HTTP), `RequestId` (`req_…`, quote it to support), `RetryAfter`, `ExitCode`
 (gaiadesk-cli's: 1 failed, 254 refused, 255 the rest), `Operation` (`POST /desks/{id}/exec`) and
 `Json` (the error envelope).

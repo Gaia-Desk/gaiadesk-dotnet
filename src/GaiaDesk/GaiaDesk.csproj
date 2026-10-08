@@ -5,7 +5,7 @@
     <RootNamespace>GaiaDesk</RootNamespace>
     <AssemblyName>GaiaDesk</AssemblyName>
     <PackageId>GaiaDesk</PackageId>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <Description>The official .NET SDK for the GaiaDesk Platform API: list, wake and audit desks, run commands (buffered or streamed), copy files, run background jobs, read stats, mint scoped agent tokens, create support sessions and manage webhooks; desk operations end-to-end encrypted to the desk (X25519, HKDF-SHA256, XChaCha20-Poly1305). Hosted API, the desk's own local API, and a desk's pinned-TLS LAN gateway.</Description>
     <PackageTags>gaiadesk;remote-desktop;remote-exec;api;sdk;e2e;automation</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
