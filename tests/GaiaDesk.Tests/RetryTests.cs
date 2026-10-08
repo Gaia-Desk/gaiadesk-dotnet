@@ -69,10 +69,17 @@ public sealed class RetryTests
     [Fact]
     public async Task ConnectionRefused_WithRetriesOff_FailsAtOnce()
     {
-        using var gd = Gd($"http://127.0.0.1:{FreePort()}/v1", retries: 0, baseMs: 1000);
+        var port = FreePort();
+        // One refused connect is instant on Linux and macOS but ~2 s on Windows (it retries the SYN):
+        // "at once" is one connect, with no back-off (a retry would wait at least 2.5 s here) after it.
+        var sw = Stopwatch.StartNew();
+        using (var probe = new TcpClient())
+            await Assert.ThrowsAnyAsync<SocketException>(() => probe.ConnectAsync(IPAddress.Loopback, port).WaitAsync(Bound));
+        var oneConnect = sw.Elapsed;
+        using var gd = Gd($"http://127.0.0.1:{port}/v1", retries: 0, baseMs: 5000);
         var (e, took) = await Fails<UnreachableException>(() => gd.ExecAsync(D, "deploy"));
         Assert.Equal((ErrorKinds.Network, "network"), (e.Kind, e.Reason!));
-        Assert.True(took < TimeSpan.FromSeconds(1), $"took {took}");
+        Assert.True(took < oneConnect + TimeSpan.FromSeconds(2), $"took {took}; one connect took {oneConnect}");
     }
 
     // ─────────────────────── lost after sending: GETs only ───────────────────────
