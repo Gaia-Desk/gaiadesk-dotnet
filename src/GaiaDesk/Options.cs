@@ -73,6 +73,32 @@ public sealed class RetryOptions
     public static RetryOptions None => new() { MaxRetries = 0 };
 }
 
+/// <summary>
+/// How long the SDK waits on the network before giving up, so a server or proxy that stops answering
+/// (a dropped connection that is never closed, a half-open socket) is a typed error, never a hang.
+/// </summary>
+public sealed class TimeoutOptions
+{
+    /// <summary>
+    /// The longest wait for an answer to begin (its status and headers), sending the request included.
+    /// Default 16 minutes: above the API's 15-minute limit on a call (a buffered exec answers when its
+    /// command ends). <see cref="Timeout.InfiniteTimeSpan"/>: no limit. Exceeded: <see cref="UnreachableException"/>, kind <c>timeout</c>.
+    /// </summary>
+    public TimeSpan ResponseTimeout { get; set; } = TimeSpan.FromMinutes(16);
+    /// <summary>
+    /// The longest silence while reading an answer's body (a JSON result, a download, an event stream,
+    /// a held wait). Default 90 s: the API's streams and held waits send a keep-alive every 15 s.
+    /// <see cref="Timeout.InfiniteTimeSpan"/>: no limit. Exceeded: <see cref="ConnectionLostException"/>, kind <c>timeout</c>.
+    /// </summary>
+    public TimeSpan IdleTimeout { get; set; } = TimeSpan.FromSeconds(90);
+
+    internal void Validate()
+    {
+        foreach (var (t, name) in new[] { (ResponseTimeout, "ResponseTimeout"), (IdleTimeout, "IdleTimeout") })
+            if (t != Timeout.InfiniteTimeSpan && t <= TimeSpan.Zero) throw Errors.Usage($"Timeouts.{name} must be positive (or Timeout.InfiniteTimeSpan)");
+    }
+}
+
 /// <summary>Options for the hosted API (<see cref="GaiaDeskClient(GaiaDeskOptions)"/>).</summary>
 public sealed class GaiaDeskOptions
 {
@@ -96,6 +122,8 @@ public sealed class GaiaDeskOptions
     public Action<string>? OnWarning { get; set; }
     /// <summary>Retries (default: <see cref="RetryOptions"/>'s defaults).</summary>
     public RetryOptions? Retry { get; set; }
+    /// <summary>Network timeouts (default: <see cref="TimeoutOptions"/>'s defaults).</summary>
+    public TimeoutOptions? Timeouts { get; set; }
     /// <summary>The <c>User-Agent</c> product added before the SDK's own (<c>myapp/1.2</c>).</summary>
     public string? UserAgent { get; set; }
 }
@@ -113,6 +141,8 @@ public sealed class LocalOptions
     public IDictionary<string, string?>? Environment { get; set; }
     /// <summary>Retries (default: <see cref="RetryOptions"/>'s defaults).</summary>
     public RetryOptions? Retry { get; set; }
+    /// <summary>Network timeouts (default: <see cref="TimeoutOptions"/>'s defaults).</summary>
+    public TimeoutOptions? Timeouts { get; set; }
 }
 
 /// <summary>Options for a desk's LAN gateway (<see cref="GaiaDeskClient.Lan(LanOptions)"/>).</summary>
@@ -126,6 +156,8 @@ public sealed class LanOptions
     public string? DeskToken { get; set; }
     /// <summary>Retries (default: <see cref="RetryOptions"/>'s defaults).</summary>
     public RetryOptions? Retry { get; set; }
+    /// <summary>Network timeouts (default: <see cref="TimeoutOptions"/>'s defaults).</summary>
+    public TimeoutOptions? Timeouts { get; set; }
 }
 
 /// <summary>Per call.</summary>

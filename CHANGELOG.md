@@ -33,6 +33,11 @@ parity with the TypeScript SDK's API transport, plus the hosted API's fleet rout
   `CommandException`) with kind, reason, desk, HTTP status, request id, `Retry-After` and exit code.
 - Retries (`RetryOptions`): 429s for every operation after `Retry-After`; lost connections and
   502/503/504 for reads only. `Idempotency-Key` per call. `CancellationToken` everywhere.
+- Timeouts (`TimeoutOptions`): `ResponseTimeout` (16 min) bounds the wait for an answer to begin,
+  `IdleTimeout` (90 s) every read of its body, so a peer that drops or stalls a connection is a typed
+  error (`UnreachableException` / `ConnectionLostException`, kind `timeout`), never a hang. Proven on a
+  raw-socket server: closed or reset before any response byte (reads retried, bodies sent once),
+  stalled mid-body, mid-JSON, mid-stream, and silent.
 - `HttpClient` injection (never disposed by the SDK), `UserAgent`.
 - Dependencies: BouncyCastle.Cryptography 2.6.1 (MIT); on netstandard2.1 also System.Text.Json 8.0.5
   and System.Threading.Channels 8.0.0 (MIT).

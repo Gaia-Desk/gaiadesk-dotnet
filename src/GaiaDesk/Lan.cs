@@ -91,6 +91,6 @@ public sealed partial class GaiaDeskClient
         }
 
         var http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
-        return new GaiaDeskClient(new HttpCore(TransportKind.Lan, baseUrl, $"the desk's LAN gateway ({origin})", http, true, Credentials, options.Retry, null, ConnectError));
+        return new GaiaDeskClient(new HttpCore(TransportKind.Lan, baseUrl, $"the desk's LAN gateway ({origin})", http, true, Credentials, options.Retry, null, options.Timeouts, ConnectError));
     }
 }

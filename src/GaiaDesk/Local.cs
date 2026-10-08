@@ -168,7 +168,7 @@ public sealed partial class GaiaDeskClient
         }
 
         var http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
-        return new GaiaDeskClient(new HttpCore(TransportKind.Local, "http://localhost/v1", "the desk's local API", http, true, Credentials, o.Retry, null));
+        return new GaiaDeskClient(new HttpCore(TransportKind.Local, "http://localhost/v1", "the desk's local API", http, true, Credentials, o.Retry, null, o.Timeouts));
 #else
         _ = options;
         throw Errors.Usage("the local transport needs .NET 5 or later (SocketsHttpHandler.ConnectCallback); this build is netstandard2.1");

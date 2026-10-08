@@ -25,7 +25,8 @@ public sealed class ApiTests : IAsyncLifetime
     public async Task DisposeAsync() => await _api.DisposeAsync();
 
     private GaiaDeskClient Gd(string key = "ak_test", string? deskToken = "gdagt_test", RetryOptions? retry = null) =>
-        new(new GaiaDeskOptions { ApiKey = key, DeskToken = deskToken, BaseUrl = _api.Url, E2e = E2eMode.Off, Retry = retry ?? new RetryOptions { BaseDelay = TimeSpan.FromMilliseconds(5) } });
+        new(new GaiaDeskOptions { ApiKey = key, DeskToken = deskToken, BaseUrl = _api.Url, E2e = E2eMode.Off, Retry = retry ?? new RetryOptions { BaseDelay = TimeSpan.FromMilliseconds(5) },
+            Timeouts = new TimeoutOptions { IdleTimeout = TimeSpan.FromSeconds(3) } });
 
     private Recorded Last(string pathEnd, string? method = null) => _api.Requests.Last(r => r.Path.EndsWith(pathEnd, StringComparison.Ordinal) && (method is null || r.Method == method));
 
@@ -332,7 +333,9 @@ public sealed class ApiTests : IAsyncLifetime
             Assert.False(File.Exists(Path.Combine(dir, "m")));
             var broken = Path.Combine(dir, "broken");
             _api.Files["broken"] = new byte[300_000];
-            await Assert.ThrowsAnyAsync<GaiaDeskException>(() => gd.DownloadFileAsync(D, "broken", broken));
+            // The mock aborts after the first 48 KiB: Kestrel sometimes leaves that socket open (the client then
+            // waits on a body that never comes), so this fails as a reset or as Timeouts.IdleTimeout, never a hang.
+            await Assert.ThrowsAnyAsync<GaiaDeskException>(() => gd.DownloadFileAsync(D, "broken", broken)).WaitAsync(TimeSpan.FromSeconds(20));
             Assert.False(File.Exists(broken), "no partial file");
             await Assert.ThrowsAsync<UsageException>(() => gd.UploadFileAsync(D, dir, "x"));
             var nofile = await Assert.ThrowsAsync<GaiaDeskException>(() => gd.UploadFileAsync(D, Path.Combine(dir, "nope"), "x"));

@@ -225,7 +225,16 @@ public sealed class DeskStream : IAsyncEnumerable<OutputChunk>, IAsyncDisposable
         if (env is not null) error = new ErrorInfo { Kind = env.Kind, Message = string.IsNullOrEmpty(env.Message) ? e.Message : env.Message, Reason = env.Reason, Desk = env.Desk };
         else
         {
-            var kind = e.Kind == ErrorKinds.Network ? ErrorKinds.Unreachable : e is ProtocolException ? ErrorKinds.Protocol : e.Kind;
+            var kind = e switch
+            {
+                ProtocolException => ErrorKinds.Protocol,
+                ConnectionLostException => ErrorKinds.ConnectionLost,
+                UnreachableException => ErrorKinds.Unreachable,
+                RefusedException => ErrorKinds.Refused,
+                OperationFailedException => ErrorKinds.Failed,
+                UsageException => ErrorKinds.Usage,
+                _ => e.Kind,
+            };
             error = new ErrorInfo { Kind = kind, Message = e.Message, Reason = e.Reason, Desk = e.Desk };
         }
         return new StreamExit { ExitCode = e.ExitCode ?? 255, Message = e.Message, Error = error };

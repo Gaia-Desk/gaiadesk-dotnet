@@ -117,9 +117,9 @@ public sealed partial class GaiaDeskClient
         return new DeskStream(op, false, async c => await StartOf(await _core.SendAsync(r, c).ConfigureAwait(false), false, op, c).ConfigureAwait(false), ct);
     }
 
-    private static async Task<StreamStart> StartOf(ApiResponse res, bool logs, string op, CancellationToken ct)
+    private async Task<StreamStart> StartOf(ApiResponse res, bool logs, string op, CancellationToken ct)
     {
-        var body = await HttpCore.ReadStream(res.Message.Content, ct).ConfigureAwait(false);
+        var body = await _core.OpenBody(res.Message, op, null, ct).ConfigureAwait(false);
         if (res.Seal is not { } seal) return new StreamStart(body, res, null);
         return new StreamStart(body, res, ev => E2eAnswers.UnsealSse(ev, seal, logs, op, ct));
     }

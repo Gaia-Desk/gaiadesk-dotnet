@@ -340,7 +340,7 @@ internal sealed partial class MockApi
                 {
                     await ctx.Response.Body.WriteAsync(Convert.FromBase64String(S(e, "data")!));
                     await ctx.Response.Body.FlushAsync();
-                    if (path == "broken") { await Task.Delay(30); ctx.Abort(); return; }
+                    if (path == "broken") { ctx.Abort(); return; }
                 }
                 return;
             }

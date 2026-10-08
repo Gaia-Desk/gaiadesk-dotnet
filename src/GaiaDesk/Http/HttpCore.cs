@@ -88,7 +88,7 @@ internal sealed class HttpCore : IDisposable
     private readonly Random _jitter = new();
 
     public HttpCore(TransportKind transport, string baseUrl, string where, HttpClient http, bool ownsHttp, Credentials credentials,
-        RetryOptions? retry, string? userAgent, Func<HttpRequestMessage, HttpRequestException, GaiaDeskException?>? connectError = null)
+        RetryOptions? retry, string? userAgent, TimeoutOptions? timeouts, Func<HttpRequestMessage, HttpRequestException, GaiaDeskException?>? connectError = null)
     {
         Transport = transport;
         BaseUrl = baseUrl.TrimEnd('/');
@@ -100,7 +100,11 @@ internal sealed class HttpCore : IDisposable
         if (_retry.MaxRetries < 0) throw Errors.Usage("Retry.MaxRetries must be zero or more");
         _userAgent = string.IsNullOrWhiteSpace(userAgent) ? SdkAgent : $"{userAgent!.Trim()} {SdkAgent}";
         _connectError = connectError;
+        _timeouts = timeouts ?? new TimeoutOptions();
+        _timeouts.Validate();
     }
+
+    private readonly TimeoutOptions _timeouts;
 
     public TransportKind Transport { get; }
     public string BaseUrl { get; }
@@ -156,9 +160,13 @@ internal sealed class HttpCore : IDisposable
         {
             using var msg = await Build(r, s, ct).ConfigureAwait(false);
             HttpResponseMessage res;
+            // The answer must begin within ResponseTimeout (sending the request included); its body is
+            // then read under IdleTimeout (OpenBody), so a peer that goes silent is an error, never a hang.
+            using var headers = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            if (_timeouts.ResponseTimeout != Timeout.InfiniteTimeSpan) headers.CancelAfter(_timeouts.ResponseTimeout);
             try
             {
-                res = await _http.SendAsync(msg, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                res = await _http.SendAsync(msg, HttpCompletionOption.ResponseHeadersRead, headers.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -166,7 +174,8 @@ internal sealed class HttpCore : IDisposable
             }
             catch (OperationCanceledException e)
             {
-                throw new UnreachableException($"{Where} did not answer {r.Operation} in time (the HttpClient's Timeout)",
+                var which = headers.IsCancellationRequested ? $"within {_timeouts.ResponseTimeout.TotalSeconds:0.###} s (Timeouts.ResponseTimeout)" : "in time (the HttpClient's Timeout)";
+                throw new UnreachableException($"{Where} did not answer {r.Operation} {which}",
                     new ErrorDetails { Kind = ErrorKinds.Timeout, Reason = "timeout", ExitCode = 255, Operation = r.Operation }, e);
             }
             catch (HttpRequestException e)
@@ -255,19 +264,28 @@ internal sealed class HttpCore : IDisposable
 
     // ───────────────────────────── answers ─────────────────────────────
 
-    public static Task<string> ReadString(HttpContent content, CancellationToken ct) =>
-#if NET5_0_OR_GREATER
-        content.ReadAsStringAsync(ct);
-#else
-        content.ReadAsStringAsync();
-#endif
-
-    public static Task<Stream> ReadStream(HttpContent content, CancellationToken ct) =>
+    private static Task<Stream> RawBody(HttpContent content, CancellationToken ct) =>
 #if NET5_0_OR_GREATER
         content.ReadAsStreamAsync(ct);
 #else
         content.ReadAsStreamAsync();
 #endif
+
+    /// <summary>An answer's body, every read of it bounded by <see cref="TimeoutOptions.IdleTimeout"/>.</summary>
+    public async Task<Stream> OpenBody(HttpResponseMessage res, string operation, string? desk, CancellationToken ct)
+    {
+        var raw = await RawBody(res.Content, ct).ConfigureAwait(false);
+        return new IdleTimeoutStream(raw, _timeouts.IdleTimeout, ct, () => new ConnectionLostException(
+            $"{Where} stopped sending its answer to {operation}: nothing for {_timeouts.IdleTimeout.TotalSeconds:0.###} s (Timeouts.IdleTimeout)",
+            new ErrorDetails { Kind = ErrorKinds.Timeout, Reason = "timeout", Operation = operation, Desk = desk, ExitCode = 255 }));
+    }
+
+    private async Task<string> ReadString(HttpResponseMessage res, string operation, CancellationToken ct)
+    {
+        using var body = await OpenBody(res, operation, null, ct).ConfigureAwait(false);
+        using var reader = new StreamReader(body, new UTF8Encoding(false));
+        return await reader.ReadToEndAsync().ConfigureAwait(false);
+    }
 
     /// <summary>A request answered with JSON (a sealed answer opened into the plaintext one).</summary>
     public async Task<JsonElement> JsonAsync(ApiRequest r, CancellationToken ct)
@@ -276,7 +294,7 @@ internal sealed class HttpCore : IDisposable
         string text;
         try
         {
-            text = await ReadString(res.Message.Content, ct).ConfigureAwait(false);
+            text = await ReadString(res.Message, r.Operation, ct).ConfigureAwait(false);
         }
         catch (Exception e) when (e is IOException or HttpRequestException)
         {
@@ -308,11 +326,11 @@ internal sealed class HttpCore : IDisposable
     }
 
     /// <summary>The typed error for a failed HTTP request: its error envelope, else a ProtocolException.</summary>
-    public static async Task<GaiaDeskException> ApiError(HttpResponseMessage res, string operation, CallerSeal? seal, CancellationToken ct)
+    public async Task<GaiaDeskException> ApiError(HttpResponseMessage res, string operation, CallerSeal? seal, CancellationToken ct)
     {
         string text;
-        try { text = await ReadString(res.Content, ct).ConfigureAwait(false); }
-        catch (Exception e) when (e is IOException or HttpRequestException) { text = ""; }
+        try { text = await ReadString(res, operation, ct).ConfigureAwait(false); }
+        catch (Exception e) when (e is IOException or HttpRequestException or ConnectionLostException) { text = ""; }
         JsonElement? json = null;
         try { json = GaiaDeskJson.Parse(text); }
         catch (JsonException) { }
@@ -415,6 +433,56 @@ internal sealed class ResponseStream : Stream
             _inner.Dispose();
             _response.Dispose();
         }
+        base.Dispose(disposing);
+    }
+}
+
+/// <summary>A response body whose every read must make progress within a time limit (or the caller's token).</summary>
+internal sealed class IdleTimeoutStream : Stream
+{
+    private readonly Stream _inner;
+    private readonly TimeSpan _idle;
+    private readonly CancellationToken _outer;
+    private readonly Func<GaiaDeskException> _timedOut;
+
+    public IdleTimeoutStream(Stream inner, TimeSpan idle, CancellationToken outer, Func<GaiaDeskException> timedOut)
+    {
+        _inner = inner;
+        _idle = idle;
+        _outer = outer;
+        _timedOut = timedOut;
+    }
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override int Read(byte[] buffer, int offset, int count) => ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct) => ReadAsync(buffer.AsMemory(offset, count), ct).AsTask();
+
+    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct, _outer);
+        if (_idle != Timeout.InfiniteTimeSpan) cts.CancelAfter(_idle);
+        try
+        {
+            return await _inner.ReadAsync(buffer, cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && !_outer.IsCancellationRequested)
+        {
+            _inner.Dispose(); // the connection is abandoned, not returned to the pool
+            throw _timedOut();
+        }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _inner.Dispose();
         base.Dispose(disposing);
     }
 }

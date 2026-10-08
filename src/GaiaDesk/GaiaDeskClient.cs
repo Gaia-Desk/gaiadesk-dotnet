@@ -47,7 +47,7 @@ public sealed partial class GaiaDeskClient : IDisposable
             if ((callToken ?? deskToken) is { } t) h["X-GaiaDesk-Desk-Token"] = t;
             return Task.FromResult(h);
         }
-        _core = new HttpCore(TransportKind.Api, baseUrl, $"the GaiaDesk API ({baseUrl})", http, owns, Credentials, options.Retry, options.UserAgent);
+        _core = new HttpCore(TransportKind.Api, baseUrl, $"the GaiaDesk API ({baseUrl})", http, owns, Credentials, options.Retry, options.UserAgent, options.Timeouts);
         _core.E2e = new E2eLayer(options.E2e, options.E2eKeys, options.OnWarning,
             (method, path, token, json, ct) => _core.JsonAsync(new ApiRequest(method, path) { DeskToken = token, Json = json }, ct), baseUrl);
     }

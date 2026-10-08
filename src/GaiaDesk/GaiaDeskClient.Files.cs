@@ -133,7 +133,7 @@ public sealed partial class GaiaDeskClient
         var res = await _core.SendAsync(r, cancellationToken).ConfigureAwait(false);
         try
         {
-            var body = await HttpCore.ReadStream(res.Message.Content, cancellationToken).ConfigureAwait(false);
+            var body = await _core.OpenBody(res.Message, r.Operation, desk, cancellationToken).ConfigureAwait(false);
             return res.Seal is { } seal ? new SealedDownloadStream(body, res, seal, r.Operation) : new ResponseStream(body, res, r.Operation, desk);
         }
         catch

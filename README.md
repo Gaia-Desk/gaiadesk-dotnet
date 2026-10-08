@@ -420,6 +420,19 @@ timeout is an `UnreachableException` with kind `timeout`.
   freshly sealed. Operations that change something are never sent twice after they may have run.
 - `RetryOptions.None` turns retries off.
 
+**Timeouts** (`TimeoutOptions`, `Timeouts` on every options class) make a server or proxy that stops
+answering an error, never a hang:
+
+- `ResponseTimeout` (default 16 minutes, above the API's 15-minute call limit): the longest wait for
+  an answer to begin, sending the request included. Exceeded: `UnreachableException`, kind `timeout`.
+- `IdleTimeout` (default 90 s; streams and held waits send a keep-alive every 15 s): the longest
+  silence while reading a body (JSON, a download, an event stream). Exceeded mid-answer:
+  `ConnectionLostException`, kind `timeout` (a stream ends with that error in `StreamExit.Error`).
+- A connection closed or reset before any answer is an `UnreachableException` (kind `network`) at
+  once. .NET's HTTP stack itself may re-send a request **without a body** (a GET or DELETE) when the
+  pooled connection it used was closed before any answer; it never re-sends one with a body, so
+  `ExecAsync`, uploads, jobs, tokens and wakes go at most once unless the SDK's own policy allows.
+
 POSTs take `CallOptions.IdempotencyKey` (`Idempotency-Key`): a retry of yours with the same key and
 the same request within 24 hours gets the first answer again. Streamed calls are never replayed.
 Every method takes a `CancellationToken`; a stream's token stops it.
