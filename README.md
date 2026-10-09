@@ -1,9 +1,14 @@
 # GaiaDesk SDK for .NET
 
-The official .NET (C#) SDK for the [GaiaDesk](https://gaiadesk.net) Platform API: list, wake and
-audit your desks, run commands on them (buffered or streamed), copy files, run background jobs,
-read their stats, mint scoped agent tokens, create support sessions for the embed SDKs, and manage
-and verify webhooks. Desk operations are **end-to-end encrypted** to the desk, so GaiaDesk's servers
+[![CI](https://github.com/Gaia-Desk/gaiadesk-dotnet/actions/workflows/ci.yml/badge.svg)](https://github.com/Gaia-Desk/gaiadesk-dotnet/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/Gaia-Desk/gaiadesk-dotnet)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/Gaia-Desk/gaiadesk-dotnet)](https://github.com/Gaia-Desk/gaiadesk-dotnet/releases/latest)
+
+The official .NET (C#) SDK and client library for the [GaiaDesk](https://gaiadesk.net) remote
+desktop Platform API, for remote access automation from .NET services, CI and AI agents: list, wake
+and audit your desks, run commands on remote computers (buffered or streamed), transfer files, run
+background jobs, read their stats, mint scoped agent tokens, create support sessions for the embed
+SDKs, and manage and verify webhooks. Desk operations are **end-to-end encrypted** to the desk, so GaiaDesk's servers
 relay only ciphertext.
 
 - One client, three transports with the same methods, results and typed errors: the **hosted API**
@@ -38,8 +43,27 @@ relay only ciphertext.
 - [Not covered](#not-covered)
 - [Examples](#examples)
 - [Development](#development)
+- [Links](#links)
 
 ## Install
+
+The package is not on NuGet yet. Build it from a release tag and add the folder it lands in as a
+package source (the .NET 8 SDK or newer):
+
+```sh
+git clone --branch v0.1.2 https://github.com/Gaia-Desk/gaiadesk-dotnet
+dotnet pack gaiadesk-dotnet/src/GaiaDesk/GaiaDesk.csproj -c Release -o ~/gaiadesk-packages
+
+# in your project
+dotnet new nugetconfig    # skip if the project already has a nuget.config
+dotnet nuget add source ~/gaiadesk-packages --name gaiadesk-local --configfile nuget.config
+dotnet add package GaiaDesk --version 0.1.2
+```
+
+Or reference the project directly:
+`dotnet add reference gaiadesk-dotnet/src/GaiaDesk/GaiaDesk.csproj`.
+
+Once published to NuGet:
 
 ```sh
 dotnet add package GaiaDesk
@@ -487,6 +511,25 @@ and sealed, streams, held waits, a Unix socket / named pipe for the local transp
 for the LAN gateway. The end-to-end vectors are the protocol's own
 (`tests/GaiaDesk.Tests/Fixtures/e2e-vectors.json`). With only a newer .NET installed, run the net8.0
 tests with `DOTNET_ROLL_FORWARD=Major`.
+
+## Links
+
+- Package: `GaiaDesk` on NuGet once published; until then, build it from this repository's
+  [release tags](https://github.com/Gaia-Desk/gaiadesk-dotnet/tags)
+- Documentation: [Getting started](https://gaiadesk.net/docs/getting-started),
+  [The CLI for scripts and AI agents](https://gaiadesk.net/docs/cli-for-agents),
+  [Agent access](https://gaiadesk.net/docs/agent-access),
+  [Embedding GaiaDesk](https://gaiadesk.net/docs/embedding-gaiadesk) (support sessions),
+  [Security](https://gaiadesk.net/docs/security)
+- GaiaDesk SDKs: [TypeScript](https://github.com/Gaia-Desk/gaiadesk-typescript),
+  [Python](https://github.com/Gaia-Desk/gaiadesk-python), [Go](https://github.com/Gaia-Desk/gaiadesk-go),
+  [Java and Kotlin](https://github.com/Gaia-Desk/gaiadesk-java), .NET (this one),
+  [Ruby](https://github.com/Gaia-Desk/gaiadesk-ruby), [PHP](https://github.com/Gaia-Desk/gaiadesk-php),
+  [Rust](https://github.com/Gaia-Desk/gaiadesk-rust); the
+  [MCP server](https://github.com/Gaia-Desk/gaiadesk-mcp) for AI assistants; the
+  [command line](https://github.com/Gaia-Desk/gaiadesk-cli), `gaiadesk-cli`
+- [Changelog](CHANGELOG.md) and [releases](https://github.com/Gaia-Desk/gaiadesk-dotnet/releases)
+- [Security policy](https://github.com/Gaia-Desk/gaiadesk-dotnet/security/policy)
 
 ## License
 
