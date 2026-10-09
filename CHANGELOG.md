@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.2 (unreleased)
+## 0.1.2
 
 - **Breaking: administrator work is not available over any API.** The hosted API, a desk's local API
   and its LAN gateway refuse it (exec with `"admin": true`: 200, exit 254, reason `admin_not_via_api`;
